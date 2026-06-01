@@ -41,10 +41,12 @@ async function run(): Promise<void> {
         const mem = core.getBooleanInput('mem');
         const excludeInput = core.getInput('exclude');
 
-        const excludes = excludeInput
+        const userExcludes = excludeInput
             .split(',')
             .map(e => e.trim())
             .filter(e => e.length > 0);
+        const defaultExcludes = ['.git', '.gitignore'];
+        const excludes = Array.from(new Set([...defaultExcludes, ...userExcludes]));
 
         const pprofDir = 'pprof-results';
         if (!fs.existsSync(pprofDir)) {
@@ -52,6 +54,7 @@ async function run(): Promise<void> {
         }
 
         core.info('🕵️‍♂️ 正在根据过滤策略扫描 Go 测试组件...');
+        core.info(`⚙️ 当前生效的完整过滤策略: [${excludes.join(', ')}]`);
         const testDirs = findTestDirs('.', excludes);
 
         const packageGroups: Record<string, BenchItem[]> = {};
@@ -59,8 +62,10 @@ async function run(): Promise<void> {
         for (const dir of testDirs) {
             const pkgName = path.basename(dir) || 'root';
 
+            const goTargetDir = dir.startsWith('.') ? dir : `./${dir}`;
+
             let benchListStr = '';
-            await exec.exec('go', ['test', '-run=^$', `-list=${match}`, dir], {
+            await exec.exec('go', ['test', '-run=^$', `-list=${match}`, goTargetDir], {
                 listeners: {
                     stdout: (data: Buffer) => { benchListStr += data.toString(); }
                 },
@@ -94,7 +99,7 @@ async function run(): Promise<void> {
                 if (mem) {
                     testArgs.push(`-memprofile=${memProf}`);
                 }
-                testArgs.push(dir);
+                testArgs.push(goTargetDir);
 
                 await exec.exec('go', testArgs, { silent: false });
                 packageGroups[pkgName].push({ bench, cpuProf, memProf });
