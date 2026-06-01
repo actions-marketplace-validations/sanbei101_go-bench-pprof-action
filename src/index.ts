@@ -3,8 +3,9 @@ import * as exec from '@actions/exec';
 import * as fs from 'fs';
 import * as path from 'path';
 
-type BenchItem = {
-    bench: string;
+type PackageResult = {
+    testOutput: string;
+    benchOutput: string;
     cpuProf: string;
     memProf: string;
 }
@@ -45,7 +46,8 @@ async function run(): Promise<void> {
             .split(',')
             .map(e => e.trim())
             .filter(e => e.length > 0);
-        const defaultExcludes = ['.git', '.gitignore'];
+        
+        const defaultExcludes = ['.git', 'node_modules'];
         const excludes = Array.from(new Set([...defaultExcludes, ...userExcludes]));
 
         const pprofDir = 'pprof-results';
@@ -54,96 +56,118 @@ async function run(): Promise<void> {
         }
 
         core.info('🕵️‍♂️ 正在根据过滤策略扫描 Go 测试组件...');
-        core.info(`⚙️ 当前生效的完整过滤策略: [${excludes.join(', ')}]`);
         const testDirs = findTestDirs('.', excludes);
-
-        const packageGroups: Record<string, BenchItem[]> = {};
+        const packageResults: Record<string, PackageResult> = {};
 
         for (const dir of testDirs) {
             const pkgName = path.basename(dir) || 'root';
-
             const goTargetDir = dir.startsWith('.') ? dir : `./${dir}`;
 
-            let benchListStr = '';
-            await exec.exec('go', ['test', '-run=^$', `-list=${match}`, goTargetDir], {
+            core.startGroup(`📦 正在独立采样组件包: [${pkgName}]`);
+            
+            // ----------------------------------------------------
+            // 单元测试流 (只跑 Test，不跑 Bench)
+            // ----------------------------------------------------
+            core.info(`🧪 正在运行单元测试 [${pkgName}]...`);
+            let testOutput = '';
+            await exec.exec('go', ['test', `-run=${match}`, '-v', goTargetDir], {
                 listeners: {
-                    stdout: (data: Buffer) => { benchListStr += data.toString(); }
+                    stdout: (data: Buffer) => { testOutput += data.toString(); },
+                    stderr: (data: Buffer) => { testOutput += data.toString(); }
                 },
-                silent: false
+                silent: false,
+                ignoreReturnCode: true
             });
 
-            const benches = benchListStr
-                .split('\n')
-                .map(b => b.trim())
-                .filter(b => b.startsWith('Benchmark'));
+            // ----------------------------------------------------
+            // 基准测试与采样流 (只跑 Bench，不跑 Test)
+            // ----------------------------------------------------
+            core.info(`🏁 正在运行基准压测与性能采样 [${pkgName}]...`);
+            const cpuProf = path.join(pprofDir, `${pkgName}_cpu.pprof`);
+            const memProf = path.join(pprofDir, `${pkgName}_mem.pprof`);
 
-            if (benches.length === 0) continue;
-
-            packageGroups[pkgName] = [];
-            core.startGroup(`📦 正在精准剖析组件包: [${pkgName}]`);
-
-            for (const bench of benches) {
-                core.info(`🎯 正在对独立函数 [${bench}] 进行纯净孤立采样...`);
-                
-                const cpuProf = path.join(pprofDir, `${pkgName}_${bench}_cpu.pprof`);
-                const memProf = path.join(pprofDir, `${pkgName}_${bench}_mem.pprof`);
-
-                const testArgs = [
-                    'test',
-                    `-bench=^${bench}$`,
-                    '-run=^$',
-                    '-v',
-                    `-cpuprofile=${cpuProf}`
-                ];
-
-                if (mem) {
-                    testArgs.push(`-memprofile=${memProf}`);
-                }
-                testArgs.push(goTargetDir);
-
-                await exec.exec('go', testArgs, { silent: false });
-                packageGroups[pkgName].push({ bench, cpuProf, memProf });
+            const benchArgs = [
+                'test',
+                `-bench=${match}`,
+                '-run=^$',
+                '-v',
+                `-cpuprofile=${cpuProf}`
+            ];
+            if (mem) {
+                benchArgs.push(`-memprofile=${memProf}`);
             }
+            benchArgs.push(goTargetDir);
+
+            let benchOutput = '';
+            await exec.exec('go', benchArgs, {
+                listeners: {
+                    stdout: (data: Buffer) => { benchOutput += data.toString(); },
+                    stderr: (data: Buffer) => { benchOutput += data.toString(); }
+                },
+                silent: false,
+                ignoreReturnCode: true
+            });
+
+            packageResults[pkgName] = { testOutput, benchOutput, cpuProf, memProf };
             core.endGroup();
         }
-
-        core.info('📊 正在通过 go tool pprof 提纯细粒度函数数据并写入 Summary...');
+        core.info('📊 正在构建 GitHub Summary 报告...');
         
-        core.summary.addHeading('# 🏎️ go-bench-pprof-action 性能分析报告', 1);
-        core.summary.addRaw(`💡 过滤规则: \`${match}\` | 展现深度: Top ${top}\n\n`);
+        core.summary.addHeading('🏎️ go-bench-pprof-action 性能分析报告', 1);
+        core.summary.addRaw(`\n\n💡 过滤规则: \`${match}\` | 展现深度: Top ${top}\n\n`);
 
-        for (const [pkg, items] of Object.entries(packageGroups)) {
+        for (const [pkg, item] of Object.entries(packageResults)) {
             core.summary.addHeading(`📦 组件包: ${pkg}`, 2);
 
-            for (const item of items) {
-                core.summary.addHeading(`📌 函数场景: \`${item.bench}\``, 3);
+            if (item.testOutput.trim()) {
+                core.summary.addRaw('\n\n### 🧪 1. 单元测试运行输出 (Unit Test)\n\n');
+                core.summary.addCodeBlock(item.testOutput.trim(), 'text');
+            }
 
-                if (fs.existsSync(item.cpuProf)) {
-                    let cpuText = '';
-                    await exec.exec('go', ['tool', 'pprof', '-text', `-nodecount=${top}`, item.cpuProf], {
-                        listeners: { stdout: (data: Buffer) => { cpuText += data.toString(); } },
-                        silent: false
-                    });
-                    core.summary.addRaw('**🧠 CPU 耗时 Top 排行:**\n');
+            if (item.benchOutput.trim() && item.benchOutput.includes('Benchmark')) {
+                core.summary.addRaw('\n\n### 🏁 2. 基准测试运行输出 (Benchmark)\n\n');
+                core.summary.addCodeBlock(item.benchOutput.trim(), 'text');
+            }
+
+            let hasPprofData = false;
+            let cpuText = '';
+            let memText = '';
+
+            if (fs.existsSync(item.cpuProf)) {
+                await exec.exec('go', ['tool', 'pprof', '-text', `-nodecount=${top}`, item.cpuProf], {
+                    listeners: { stdout: (data: Buffer) => { cpuText += data.toString(); } },
+                    silent: true
+                });
+                if (cpuText.trim()) hasPprofData = true;
+            }
+
+            if (mem && fs.existsSync(item.memProf)) {
+                await exec.exec('go', ['tool', 'pprof', '-text', `-nodecount=${top}`, '-inuse_space', item.memProf], {
+                    listeners: { stdout: (data: Buffer) => { memText += data.toString(); } },
+                    silent: true
+                });
+                if (memText.trim()) hasPprofData = true;
+            }
+
+            if (hasPprofData) {
+                core.summary.addRaw('\n\n### 🔍 3. Pprof 指标\n\n');
+                
+                if (cpuText.trim()) {
+                    core.summary.addRaw('**🧠 CPU 耗时 Top 排行:**\n\n');
                     core.summary.addCodeBlock(cpuText.trim(), 'text');
                 }
-
-                if (mem && fs.existsSync(item.memProf)) {
-                    let memText = '';
-                    await exec.exec('go', ['tool', 'pprof', '-text', `-nodecount=${top}`, '-inuse_space', item.memProf], {
-                        listeners: { stdout: (data: Buffer) => { memText += data.toString(); } },
-                        silent: false
-                    });
-                    core.summary.addRaw('**💾 内存空间占用 Top 排行:**\n');
+                
+                if (memText.trim()) {
+                    core.summary.addRaw('\n\n**💾 内存空间占用 Top 排行:**\n\n');
                     core.summary.addCodeBlock(memText.trim(), 'text');
                 }
-
-                core.summary.addRaw('---\n');
             }
+
+            core.summary.addRaw('\n\n---\n\n');
         }
 
         await core.summary.write();
-        core.info('🎉 函数级全景性能画像已完美送达!');
+        core.info('🎉 性能全景画像已送达!');
 
     } catch (error: any) {
         core.setFailed(`❌ ${error.message}`);
