@@ -47,7 +47,7 @@ async function run(): Promise<void> {
             .map(e => e.trim())
             .filter(e => e.length > 0);
         
-        const defaultExcludes = ['.git', 'node_modules'];
+        const defaultExcludes = ['.git', '.gitignore'];
         const excludes = Array.from(new Set([...defaultExcludes, ...userExcludes]));
 
         const pprofDir = 'pprof-results';
@@ -89,7 +89,7 @@ async function run(): Promise<void> {
             const benchArgs = [
                 'test',
                 `-bench=${match}`,
-                '-run=^$',
+                '-run=^$', // 屏蔽单元测试
                 '-v',
                 `-cpuprofile=${cpuProf}`
             ];
@@ -111,21 +111,24 @@ async function run(): Promise<void> {
             packageResults[pkgName] = { testOutput, benchOutput, cpuProf, memProf };
             core.endGroup();
         }
-        core.info('📊 正在构建 GitHub Summary 报告...');
+
+
+        core.info('📊 正在构建 Summary 报告...');
         
         core.summary.addHeading('🏎️ go-bench-pprof-action 性能分析报告', 1);
-        core.summary.addRaw(`\n\n💡 过滤规则: \`${match}\` | 展现深度: Top ${top}\n\n`);
+        
+        core.summary.addQuote(`💡 过滤规则: \`${match}\` | 展现深度: Top ${top}`);
 
         for (const [pkg, item] of Object.entries(packageResults)) {
             core.summary.addHeading(`📦 组件包: ${pkg}`, 2);
 
             if (item.testOutput.trim()) {
-                core.summary.addRaw('\n\n### 🧪 1. 单元测试运行输出 (Unit Test)\n\n');
+                core.summary.addHeading('🧪 1. 单元测试运行输出 (Unit Test)', 3);
                 core.summary.addCodeBlock(item.testOutput.trim(), 'text');
             }
 
             if (item.benchOutput.trim() && item.benchOutput.includes('Benchmark')) {
-                core.summary.addRaw('\n\n### 🏁 2. 基准测试运行输出 (Benchmark)\n\n');
+                core.summary.addHeading('🏁 2. 基准测试运行输出 (Benchmark)', 3);
                 core.summary.addCodeBlock(item.benchOutput.trim(), 'text');
             }
 
@@ -150,24 +153,22 @@ async function run(): Promise<void> {
             }
 
             if (hasPprofData) {
-                core.summary.addRaw('\n\n### 🔍 3. Pprof 指标\n\n');
-                
+                core.summary.addHeading('🔍 3. Pprof 提纯数据指标 (Go Tool Pprof)', 3);
                 if (cpuText.trim()) {
-                    core.summary.addRaw('**🧠 CPU 耗时 Top 排行:**\n\n');
+                    core.summary.addHeading('🧠 CPU 耗时 Top 排行', 4);
                     core.summary.addCodeBlock(cpuText.trim(), 'text');
                 }
                 
                 if (memText.trim()) {
-                    core.summary.addRaw('\n\n**💾 内存空间占用 Top 排行:**\n\n');
+                    core.summary.addHeading('💾 内存空间占用 Top 排行', 4);
                     core.summary.addCodeBlock(memText.trim(), 'text');
                 }
             }
-
-            core.summary.addRaw('\n\n---\n\n');
+            core.summary.addSeparator();
         }
 
         await core.summary.write();
-        core.info('🎉 性能全景画像已送达!');
+        core.info('🎉 语义化流式性能报告已完美送达!');
 
     } catch (error: any) {
         core.setFailed(`❌ ${error.message}`);
