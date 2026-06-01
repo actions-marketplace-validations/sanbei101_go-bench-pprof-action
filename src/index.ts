@@ -64,7 +64,7 @@ async function run(): Promise<void> {
                 listeners: {
                     stdout: (data: Buffer) => { benchListStr += data.toString(); }
                 },
-                silent: true
+                silent: false
             });
 
             const benches = benchListStr
@@ -96,7 +96,7 @@ async function run(): Promise<void> {
                 }
                 testArgs.push(dir);
 
-                await exec.exec('go', testArgs, { silent: true });
+                await exec.exec('go', testArgs, { silent: false });
                 packageGroups[pkgName].push({ bench, cpuProf, memProf });
             }
             core.endGroup();
@@ -117,7 +117,7 @@ async function run(): Promise<void> {
                     let cpuText = '';
                     await exec.exec('go', ['tool', 'pprof', '-text', `-nodecount=${top}`, item.cpuProf], {
                         listeners: { stdout: (data: Buffer) => { cpuText += data.toString(); } },
-                        silent: true
+                        silent: false
                     });
                     core.summary.addRaw('**🧠 CPU 耗时 Top 排行:**\n');
                     core.summary.addCodeBlock(cpuText.trim(), 'text');
@@ -127,7 +127,7 @@ async function run(): Promise<void> {
                     let memText = '';
                     await exec.exec('go', ['tool', 'pprof', '-text', `-nodecount=${top}`, '-inuse_space', item.memProf], {
                         listeners: { stdout: (data: Buffer) => { memText += data.toString(); } },
-                        silent: true
+                        silent: false
                     });
                     core.summary.addRaw('**💾 内存空间占用 Top 排行:**\n');
                     core.summary.addCodeBlock(memText.trim(), 'text');

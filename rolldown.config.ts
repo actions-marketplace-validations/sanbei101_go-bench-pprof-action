@@ -5,6 +5,7 @@ export default defineConfig({
   output: {
     file: "dist/index.js",
     format: "esm",
+    minify: true,
   },
   platform: "node",
 });
