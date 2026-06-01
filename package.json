@@ -1,0 +1,29 @@
+{
+  "name": "go-bench-pprof-action",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+		"build": "rolldown -c rolldown.config.ts"
+	},
+  "keywords": ["pprof", "benchmark", "github-actions"],
+  "author": "sanbei101",
+  "license": "ISC",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.5.0",
+      "onFail": "download"
+    }
+  },
+  "type": "module",
+  "dependencies": {
+    "@actions/core": "^3.0.1",
+    "@actions/exec": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.1",
+    "rolldown": "^1.0.3",
+    "typescript": "^6.0.3"
+  }
+}

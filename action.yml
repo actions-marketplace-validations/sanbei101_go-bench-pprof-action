@@ -1,0 +1,29 @@
+name: 'Go Bench Pprof Action'
+description: '自动化按包分类、细粒度精确到函数的 Go Benchmark 性能剖析与 pprof 提纯工具'
+author: 'sanbei101'
+
+inputs:
+  top:
+    description: 'pprof 排序输出前 K 个核心节点'
+    required: false
+    default: '10'
+  match:
+    description: '筛选 Benchmark 函数名的正则表达式'
+    required: false
+    default: '.*'
+  mem:
+    description: '是否启用内存性能剖析'
+    required: false
+    default: 'true'
+  exclude:
+    description: '需要排除扫描的逗号分隔路径/目录片段'
+    required: false
+    default: 'node_modules,.git,/copy'
+
+runs:
+  using: 'node24'
+  main: 'dist/index.js'
+
+branding:
+  icon: "refresh-cw"
+  color: "blue"
