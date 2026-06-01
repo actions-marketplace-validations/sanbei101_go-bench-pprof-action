@@ -66,7 +66,7 @@ async function run(): Promise<void> {
             core.startGroup(`📦 正在独立采样组件包: [${pkgName}]`);
             
             // ----------------------------------------------------
-            // 单元测试流 (只跑 Test，不跑 Bench)
+            // 🧪 单元测试流
             // ----------------------------------------------------
             core.info(`🧪 正在运行单元测试 [${pkgName}]...`);
             let testOutput = '';
@@ -80,7 +80,7 @@ async function run(): Promise<void> {
             });
 
             // ----------------------------------------------------
-            // 基准测试与采样流 (只跑 Bench，不跑 Test)
+            // 🏁 基准测试与整体采样流
             // ----------------------------------------------------
             core.info(`🏁 正在运行基准压测与性能采样 [${pkgName}]...`);
             const cpuProf = path.join(pprofDir, `${pkgName}_cpu.pprof`);
@@ -112,64 +112,67 @@ async function run(): Promise<void> {
             core.endGroup();
         }
 
-
-        core.info('📊 正在构建 Summary 报告...');
-        
+        // ----------------------------------------------------
+        // 📊 渲染阶段
+        // ----------------------------------------------------
+        core.info('📊 正在构建三维立体、函数级隔离的 Summary 报告...');
         core.summary.addHeading('🏎️ go-bench-pprof-action 性能分析报告', 1);
-        
         core.summary.addQuote(`💡 过滤规则: \`${match}\` | 展现深度: Top ${top}`);
 
         for (const [pkg, item] of Object.entries(packageResults)) {
             core.summary.addHeading(`📦 组件包: ${pkg}`, 2);
 
             if (item.testOutput.trim()) {
-                core.summary.addHeading('🧪 1. 单元测试运行输出 (Unit Test)', 3);
+                core.summary.addHeading('🧪 测试输出', 3);
                 core.summary.addCodeBlock(item.testOutput.trim(), 'text');
             }
 
             if (item.benchOutput.trim() && item.benchOutput.includes('Benchmark')) {
-                core.summary.addHeading('🏁 2. 基准测试运行输出 (Benchmark)', 3);
+                core.summary.addHeading('🏁 Bench输出', 3);
                 core.summary.addCodeBlock(item.benchOutput.trim(), 'text');
             }
 
-            let hasPprofData = false;
-            let cpuText = '';
-            let memText = '';
+            const benches = item.benchOutput
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.startsWith('Benchmark'))
+                .map(line => line.split(/\s+/)[0].split('-')[0])
+                .filter((v, i, a) => a.indexOf(v) === i);
 
-            if (fs.existsSync(item.cpuProf)) {
-                await exec.exec('go', ['tool', 'pprof', '-text', `-nodecount=${top}`, item.cpuProf], {
-                    listeners: { stdout: (data: Buffer) => { cpuText += data.toString(); } },
-                    silent: true
-                });
-                if (cpuText.trim()) hasPprofData = true;
-            }
+            if (benches.length > 0 && (fs.existsSync(item.cpuProf) || fs.existsSync(item.memProf))) {
+                core.summary.addHeading('🔍 Pprof 函数级数据指标', 3);
 
-            if (mem && fs.existsSync(item.memProf)) {
-                await exec.exec('go', ['tool', 'pprof', '-text', `-nodecount=${top}`, '-inuse_space', item.memProf], {
-                    listeners: { stdout: (data: Buffer) => { memText += data.toString(); } },
-                    silent: true
-                });
-                if (memText.trim()) hasPprofData = true;
-            }
-
-            if (hasPprofData) {
-                core.summary.addHeading('🔍 3. Pprof 提纯数据指标 (Go Tool Pprof)', 3);
-                if (cpuText.trim()) {
-                    core.summary.addHeading('🧠 CPU 耗时 Top 排行', 4);
-                    core.summary.addCodeBlock(cpuText.trim(), 'text');
-                }
-                
-                if (memText.trim()) {
-                    core.summary.addHeading('💾 内存空间占用 Top 排行', 4);
-                    core.summary.addCodeBlock(memText.trim(), 'text');
+                for (const bench of benches) {
+                    core.summary.addHeading(`📌 函数场景: \`${bench}\``, 4);
+                    if (fs.existsSync(item.cpuProf)) {
+                        let cpuText = '';
+                        await exec.exec('go', ['tool', 'pprof', '-text', `-nodecount=${top}`, `-focus=${bench}`, item.cpuProf], {
+                            listeners: { stdout: (data: Buffer) => { cpuText += data.toString(); } },
+                            silent: true
+                        });
+                        if (cpuText.includes(bench) || cpuText.split('\n').length > 5) {
+                            core.summary.addHeading('🧠 CPU 耗时 Top 排行', 5);
+                            core.summary.addCodeBlock(cpuText.trim(), 'text');
+                        }
+                    }
+                    if (mem && fs.existsSync(item.memProf)) {
+                        let memText = '';
+                        await exec.exec('go', ['tool', 'pprof', '-text', `-nodecount=${top}`, '-inuse_space', `-focus=${bench}`, item.memProf], {
+                            listeners: { stdout: (data: Buffer) => { memText += data.toString(); } },
+                            silent: true
+                        });
+                        if (memText.includes(bench) || memText.split('\n').length > 5) {
+                            core.summary.addHeading('💾 内存空间占用 Top 排行', 5);
+                            core.summary.addCodeBlock(memText.trim(), 'text');
+                        }
+                    }
                 }
             }
             core.summary.addSeparator();
         }
 
         await core.summary.write();
-        core.info('🎉 语义化流式性能报告已完美送达!');
-
+        core.info('🎉 语义化性能报告已完美送达!');
     } catch (error: any) {
         core.setFailed(`❌ ${error.message}`);
     }
