@@ -105,7 +105,8 @@ async function run(): Promise<void> {
             packageResults[pkgName] = { testOutput, benchOutput, cpuProf, memProf };
             core.endGroup();
         }
-        core.info('📊 正在构建纯 Markdown 形式的 Summary 报告...');
+
+        core.info('📊 正在构建Summary 报告...');
         
         core.summary.addRaw('# 🏎️ go-bench-pprof-action 性能分析报告\n\n');
         core.summary.addRaw(`> 💡 过滤规则: \`${match}\` | 展现深度: Top ${top}\n\n`);
@@ -114,12 +115,12 @@ async function run(): Promise<void> {
             core.summary.addRaw(`## 📦 组件包: ${pkg}\n\n`);
 
             if (item.testOutput.trim()) {
-                core.summary.addRaw(`### 🧪 1. 单元测试运行输出 (Unit Test)\n\n`);
+                core.summary.addRaw(`### 🧪 单元测试运行输出\n\n`);
                 core.summary.addRaw(`\`\`\`text\n${item.testOutput.trim()}\n\`\`\`\n\n`);
             }
 
             if (item.benchOutput.trim() && item.benchOutput.includes('Benchmark')) {
-                core.summary.addRaw(`### 🏁 2. 基准测试运行输出 (Benchmark)\n\n`);
+                core.summary.addRaw(`### 🏁 基准测试运行输出\n\n`);
                 core.summary.addRaw(`\`\`\`text\n${item.benchOutput.trim()}\n\`\`\`\n\n`);
             }
 
@@ -127,11 +128,15 @@ async function run(): Promise<void> {
                 .split('\n')
                 .map(line => line.trim())
                 .filter(line => line.startsWith('Benchmark'))
-                .map(line => line.split(/\s+/)[0].split('-')[0])
+                .map(line => {
+                    const firstCol = line.split(/\s+/)[0];
+                    const noCpuSuffix = firstCol.split('-')[0];
+                    return noCpuSuffix.split('/')[0];
+                })
                 .filter((v, i, a) => a.indexOf(v) === i);
 
             if (benches.length > 0 && (fs.existsSync(item.cpuProf) || fs.existsSync(item.memProf))) {
-                core.summary.addRaw(`### Pprof 指标\n\n`);
+                core.summary.addRaw(`### 🔍 Pprof 数据指标\n\n`);
 
                 for (const bench of benches) {
                     core.summary.addRaw(`#### 📌 函数场景: \`${bench}\`\n\n`);
