@@ -4,9 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-		"build": "rolldown -c rolldown.config.ts"
-	},
-  "keywords": ["pprof", "benchmark", "github-actions"],
+    "build": "rolldown -c rolldown.config.ts"
+  },
+  "keywords": [
+    "pprof",
+    "benchmark",
+    "github-actions"
+  ],
   "author": "sanbei101",
   "license": "ISC",
   "devEngines": {
@@ -23,7 +27,7 @@
   },
   "devDependencies": {
     "@types/node": "25.9.1",
-    "rolldown": "^1.0.3",
-    "typescript": "^6.0.3"
+    "rolldown": "^1.1.5",
+    "typescript": "^7.0.2"
   }
 }
